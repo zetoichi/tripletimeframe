@@ -15,13 +15,12 @@ from alpha_vantage.timeseries import TimeSeries
 class Stock:
 
     # API ACCESS (ENVIRONMENT VARIABLES)
-    av_api_key = os.environ.get('ALPHAVANTAGE_API_KEY')
-    alpaca_api_key = os.environ.get('ALPACA_API')
-    alpaca_api_secret = os.environ.get('ALPACA_SECRET')
+    api_key = os.environ.get('ALPACA_API')
+    api_secret = os.environ.get('ALPACA_SECRET')
     
-    alpaca_headers = {
-        'APCA-API-KEY-ID': alpaca_api_key,
-        'APCA-API-SECRET-KEY': alpaca_api_secret
+    headers = {
+        'APCA-API-KEY-ID': api_key,
+        'APCA-API-SECRET-KEY': api_secret
         }
 
 
@@ -71,57 +70,12 @@ class Stock:
         """
         self.open = False
 
-    
-    @error_logging
-    def get_trend_data(self):
-        """
-        - Get data for the first and longest timeframe
-        - Calculate Simple Moving Averages
-        - Return last 60 rows
-        """
-        
-        start = dt.datetime(2020, 1, 1) - dt.timedelta(max(self.sma_windows))
-        end = dt.datetime.now()
-
-        trend = web.DataReader(self.symbol, self.trend_timeframe,
-                               start, end, api_key=self.av_api_key)
-
-        for sma in self.sma_windows:
-            trend['sma' + str(sma)] = trend['adjusted close'].rolling(sma).mean()
-        
-        return trend.iloc[-60:]
-
 
     @error_logging
-    def get_tactical_data(self):
-        """
-        - Get data for the second timeframe
-        - Calculate stochastic values for the given time windows
-        - Return last 20 rows
-        """
-        
-        ts = TimeSeries(self.av_api_key, output_format='pandas')
-        intra = ts.get_intraday(self.symbol, self.tactical_timeframe)[0]
-        
-        # Rename columns and sort rows for consistency between dataframes
-        intra.rename(lambda s: s[3:], axis=1, inplace=True) 
-        intra.sort_index(inplace=True)
+    def get_bars(self, timeframe, limit=10):
 
-        full_intra = self.get_stochastic(intra)
-
-        debug_logger.debug("Calculated Stochastic for '{}'".format(self.symbol))
-
-        return full_intra.iloc[-20:]
-
-    
-    @error_logging
-    def get_execution_data(self, limit=10):
-        """
-        - Get and return real-time price action data
-        """
-        
         url = ('https://data.alpaca.markets/v1/bars/' +
-               self.execution_timeframe)
+               timeframe)
 
         params = {
             'symbols': str(self.symbol),
@@ -137,13 +91,54 @@ class Stock:
             'v': 'volume',
             }
 
-        r = requests.get(url, params=params, headers=self.alpaca_headers)
-        execution = pd.DataFrame.from_dict(json.loads(r.content)[self.symbol])
+        r = requests.get(url, params=params, headers=self.headers)
+        bars = pd.DataFrame.from_dict(json.loads(r.content)[self.symbol])
 
         # Rename columns for consistency between dataframes
-        execution.rename(rename_dict, axis=1, inplace=True)
+        bars.rename(rename_dict, axis=1, inplace=True)
 
-        return execution
+        return bars
+
+    
+    def get_trend_data(self):
+        """
+        - Get data for the first and longest timeframe
+        - Calculate Simple Moving Averages
+        - Return last 60 rows
+        """
+
+        trend = self.get_bars(self.trend_timeframe, limit=200)
+
+        for sma in self.sma_windows:
+            trend['sma' + str(sma)] = trend['adjusted close'].rolling(sma).mean()
+        
+        return trend.iloc[-60:]
+
+
+    def get_tactical_data(self):
+        """
+        - Get data for the second timeframe
+        - Calculate stochastic values for the given time windows
+        - Return last 20 rows
+        """
+        
+        if self.tactical_timeframe = '60Min':
+
+            data = self.get_bars('15Min', limit=0)
+            data_resampled = self.alpaca_bars_resample(data)
+            tactical =self.get_stochastic(data_resampled)
+            debug_logger.debug("Calculated Stochastic for '{}'".format(self.symbol))
+
+
+        return tactical.iloc[-20:]
+
+    
+    def get_execution_data(self):
+        """
+        - Get and return real-time price action data
+        """
+
+        return self.get_bars(self.execution_timeframe)
 
 
     # Calculate and store Stochastic values
@@ -165,6 +160,20 @@ class Stock:
         df['d'] = df['k'].rolling(d).mean()
 
         return df
+    
+
+
+    def alpaca_bars_resample(self, bars):
+
+        delta = dt.timedelta(hours=1)
+        bars_resample = pd.DataFrame()
+        bars_resample['open'] = bars['open'].resample(delta).asfreq()
+        bars_resample['high'] =  bars['high'].resample(delta).max()
+        bars_resample['low'] =  bars['low'].resample(delta).min()
+        bars_resample['close'] = bars['close'].shift(-3).resample(delta).asfreq()
+        bars_resample['volume'] = bars['volume'].resample(delta).sum()
+
+        return bars_resample
 
 
     @error_logging

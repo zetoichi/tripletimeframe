@@ -26,12 +26,12 @@ def main():
                         'Tactical',
                         (data, loop_lock, 300), thread_lock)
     
-    standby = ScanThread(scan.standby_scan,
-                        'Standby',
-                        (data, loop_lock), thread_lock)
-    
     execute = ScanThread(scan.execute_scan,
                         'Execute',
+                        (data, loop_lock), thread_lock)
+    
+    standby = ScanThread(scan.standby_scan,
+                        'Standby',
                         (data, loop_lock), thread_lock)
                         
     trend.start()

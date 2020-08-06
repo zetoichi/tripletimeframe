@@ -76,7 +76,7 @@ def trend_scan(stocks, lock, sleep_time=1800, scans=3):
                 if stock.potential == 2:
                     stocks['potential'].add(stock)
 
-                time.sleep(15)     # Alpha-vantage API allows max 5 calls/min
+                time.sleep(5)     
             
         lock.release()
         debug_logger.debug("Lock released by trend_scan()")
@@ -115,7 +115,7 @@ def tactical_scan(stocks, lock, sleep_time=600, scans=12):
                     elif stock.potential == 1:   
                         stocks['standby'].add(stock)
     
-                time.sleep(15)     # Alpha-vantage API allows max 5 calls/min
+                time.sleep(5)     
             
             lock.release()
             debug_logger.debug("Lock released by tactical_scan()")
@@ -154,7 +154,7 @@ def standby_scan(stocks, lock, sleep_time=120, scans=24):
                     if stock.potential == 2: 
                         stocks['buy'].add(stock)
 
-                time.sleep(15)
+                time.sleep(5)
             
             lock.release()
             debug_logger.debug("Lock released by standby_scan()")
@@ -206,7 +206,7 @@ def execute_scan(stocks, lock, sleep_time=60, scans=40):
                         else:
                             continue
                     
-                time.sleep(10)
+                time.sleep(5)
         
             lock.release()
             debug_logger.debug("Lock released by execute_scan()")

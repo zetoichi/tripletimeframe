@@ -6,9 +6,7 @@ import logging
 from ttf_logger import debug_logger, stock_logger, error_logging
 
 import pandas as pd
-import pandas_datareader.data as web
 import requests
-from alpha_vantage.timeseries import TimeSeries
 
 #logging.disable(logging.CRITICAL)
 
@@ -24,8 +22,8 @@ class Stock:
         }
 
 
-    def __init__(self, symbol, trend_timeframe='av-daily-adjusted',
-                 tactical_timeframe='60min', execution_timeframe='1Min',
+    def __init__(self, symbol, trend_timeframe='day',
+                 tactical_timeframe='60Min', execution_timeframe='1Min',
                  sma_windows=(50,), stoch_windows=(8,3,5)):
         
         """
@@ -72,7 +70,7 @@ class Stock:
 
 
     @error_logging
-    def get_bars(self, timeframe, limit=10):
+    def get_data(self, timeframe, limit=10):
 
         url = ('https://data.alpaca.markets/v1/bars/' +
                timeframe)
@@ -92,12 +90,12 @@ class Stock:
             }
 
         r = requests.get(url, params=params, headers=self.headers)
-        bars = pd.DataFrame.from_dict(json.loads(r.content)[self.symbol])
+        data = pd.DataFrame.from_dict(json.loads(r.content)[self.symbol])
 
         # Rename columns for consistency between dataframes
-        bars.rename(rename_dict, axis=1, inplace=True)
+        data.rename(rename_dict, axis=1, inplace=True)
 
-        return bars
+        return data
 
     
     def get_trend_data(self):
@@ -107,10 +105,10 @@ class Stock:
         - Return last 60 rows
         """
 
-        trend = self.get_bars(self.trend_timeframe, limit=200)
+        trend = self.get_data(self.trend_timeframe, limit=200)
 
         for sma in self.sma_windows:
-            trend['sma' + str(sma)] = trend['adjusted close'].rolling(sma).mean()
+            trend['sma' + str(sma)] = trend['close'].rolling(sma).mean()
         
         return trend.iloc[-60:]
 
@@ -122,59 +120,71 @@ class Stock:
         - Return last 20 rows
         """
         
-        if self.tactical_timeframe = '60Min':
+        if self.tactical_timeframe == '60Min':
 
-            data = self.get_bars('15Min', limit=0)
-            data_resampled = self.alpaca_bars_resample(data)
+            data = self.get_data('15Min', limit=0)
+            data_resampled = self.alpaca_data_resample(data)
             tactical =self.get_stochastic(data_resampled)
             debug_logger.debug("Calculated Stochastic for '{}'".format(self.symbol))
 
+            return tactical.iloc[-20:]
+        
+        else:
 
-        return tactical.iloc[-20:]
+            data = self.get_data(self.tactical_timeframe, limit=0)
+            tactical =self.get_stochastic(data)
+            debug_logger.debug("Calculated Stochastic for '{}'".format(self.symbol))
 
-    
+            return tactical.iloc[-20:]
+
+
     def get_execution_data(self):
         """
         - Get and return real-time price action data
         """
 
-        return self.get_bars(self.execution_timeframe)
+        return self.get_data(self.execution_timeframe)
+
+
+    def alpaca_data_resample(self, data):
+
+        data['time'] = data['time'].apply(dt.datetime.fromtimestamp)
+        data.set_index('time', inplace=True)
+
+        params = {'rule': dt.timedelta(hours=1),
+        'offset': dt.timedelta(minutes=30)}
+
+        data_resample = pd.DataFrame()
+        data_resample['open'] = data['open'].resample(**params).asfreq()
+        data_resample['high'] =  data['high'].resample(**params).max()
+        data_resample['low'] =  data['low'].resample(**params).min()
+        data_resample['close'] = data['close'].shift(-3).resample(**params).asfreq()
+        data_resample['volume'] = data['volume'].resample(**params).sum()
+        data_resample.dropna(inplace=True)
+
+        return data_resample
 
 
     # Calculate and store Stochastic values
     @error_logging
-    def get_stochastic(self, df):
+    def get_stochastic(self, data):
 
         # Unpack given Stochastic windows
         fastk, k, d = self.stoch_windows
 
-        df['rolling high'] = df['high'].rolling(fastk).mean()
-        df['rolling low'] = df['low'].rolling(fastk).mean()
+        data['rolling high'] = data['high'].rolling(fastk).max()
+        data['rolling low'] = data['low'].rolling(fastk).min()
         
-        df['fast k'] = (
-            (df['close'] - df['rolling low']) /
-            (df['rolling high'] - df['rolling low'])
+        data['fast k'] = (
+            (data['close'] - data['rolling low']) /
+            (data['rolling high'] - data['rolling low'])
             ) * 100
 
-        df['k'] = df['fast k'].rolling(k).mean()
-        df['d'] = df['k'].rolling(d).mean()
+        data['k'] = data['fast k'].rolling(k).mean()
+        data['d'] = data['k'].rolling(d).mean()
 
-        return df
+        return data
     
-
-
-    def alpaca_bars_resample(self, bars):
-
-        delta = dt.timedelta(hours=1)
-        bars_resample = pd.DataFrame()
-        bars_resample['open'] = bars['open'].resample(delta).asfreq()
-        bars_resample['high'] =  bars['high'].resample(delta).max()
-        bars_resample['low'] =  bars['low'].resample(delta).min()
-        bars_resample['close'] = bars['close'].shift(-3).resample(delta).asfreq()
-        bars_resample['volume'] = bars['volume'].resample(delta).sum()
-
-        return bars_resample
-
 
     @error_logging
     def get_trend_potential(self):
@@ -185,7 +195,7 @@ class Stock:
                             self.symbol))
 
         # Check if recent close prices are above the trend (SMA).
-        if trend_data['adjusted close'].ge(trend_data['sma50']).all():
+        if trend_data['close'].ge(trend_data['sma50']).all():
 
             last_month_smas = trend_data['sma50'].iloc[-30:].values
 

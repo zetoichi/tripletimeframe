@@ -8,8 +8,6 @@ verify_ssl = true
 [packages]
 pandas = "*"
 requests = "*"
-pandas-datareader = "*"
-alpha-vantage = "*"
 requests-mock = "*"
 schedule = "*"
 pytz = "*"

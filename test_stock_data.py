@@ -9,7 +9,6 @@ import logging
 import pandas as pd
 import pandas_datareader.data as web
 import requests
-from alpha_vantage.timeseries import TimeSeries
 
 import scan_data as scan_data
 from alpaca import Alpaca

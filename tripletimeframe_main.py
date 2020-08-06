@@ -45,15 +45,16 @@ def main():
     execute.join()
 
 
-#schedule.every().monday.at("15:27").do(main)
-#schedule.every().tuesday.at("15:27").do(main)
-#schedule.every().wednesday.at("15:27").do(main)
-#schedule.every().thursday.at("15:27").do(main)
-#schedule.every().friday.at("15:27").do(main)
-#
-#while True:
-#    schedule.run_pending()
-#    time.sleep(1)
+
+schedule.every().monday.at("11:27").do(main)
+schedule.every().tuesday.at("11:27").do(main)
+schedule.every().wednesday.at("11:27").do(main)
+schedule.every().thursday.at("11:27").do(main)
+schedule.every().friday.at("11:27").do(main)
+
 
 if __name__ == "__main__":
-    main()
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(1)

@@ -7,7 +7,6 @@ from ttf_logger import debug_logger, stock_logger
 from alpaca import Alpaca
 from stock_data import Stock
 
-
 class ScanThread(threading.Thread):
 
     def __init__(self, target, name, args, lock):
@@ -39,7 +38,7 @@ def initialize_data():
     """
 
     a = Alpaca()
-    watchlist = a.get_watchlist()
+    watchlist = a.get_watchlist_symbols()
 
     stocks = {
         'initial': {Stock(symbol) for symbol in watchlist},
@@ -66,8 +65,7 @@ def trend_scan(stocks, lock, sleep_time=1800, scans=3):
 
         for stock in stocks['initial']:
 
-            if (not stock.open
-                and stock not in stocks['potential']):
+            if not stock.open:
 
                 stock.get_trend_potential()
 
@@ -99,11 +97,10 @@ def tactical_scan(stocks, lock, sleep_time=600, scans=12):
         debug_logger.debug("Lock acquired by tactical_scan()")
 
         if stocks['potential']:
+
             for stock in stocks['potential']: 
             
-                if (not stock.open
-                    and stock not in stocks['buy']
-                    and stock not in stocks['standby']):
+                if not stock.open:
                     
                     stock.get_tactical_potential()
 
@@ -144,8 +141,7 @@ def standby_scan(stocks, lock, sleep_time=120, scans=24):
 
             for stock in stocks['standby']:
                 
-                if (not stock.open
-                    and stock not in stocks['buy']):
+                if not stock.open:
 
                     stock.get_tactical_potential()
 

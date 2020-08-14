@@ -8,8 +8,6 @@ from ttf_logger import debug_logger, stock_logger, error_logging
 import pandas as pd
 import requests
 
-#logging.disable(logging.CRITICAL)
-
 class Stock:
 
     # API ACCESS (ENVIRONMENT VARIABLES)
@@ -194,35 +192,18 @@ class Stock:
         debug_logger.debug("get_trend_data() called for '{}'".format(
                             self.symbol))
 
-        # Check if recent close prices are above the trend (SMA).
-        if trend_data['close'].ge(trend_data['sma50']).all():
+        last_month_smas = trend_data['sma50'].iloc[-30:].values
+        last_lows = trend_data['low'].iloc[-6:].values
+        last_low = trend_data['low'].iloc[-1]
+        last_sma = trend_data['sma50'].iloc[-1]
+        
+        if (trend_data['close'].ge(trend_data['sma50']).all() and
+            self.is_trending_up(last_month_smas, step=10) and not
+            self.is_trending_up(last_lows) and
+            self.is_in_range(last_low, last_sma)):
 
-            last_month_smas = trend_data['sma50'].iloc[-30:].values
-
-            # Check if market trend is bullish by comparing
-            # last month SMA values between in 10 day periods.
-            if self.is_trending_up(last_month_smas, step=10):
+            self.potential = 2
             
-                last_lows = trend_data['low'].iloc[-6:].values
-
-                stock_logger.info("'{}' is trending up".format(self.symbol))
-                
-                # Check if there is a recent pull-back against that trend.
-                if not self.is_trending_up(last_lows):
-
-                    last_low = trend_data['low'].iloc[-1]
-                    last_sma = trend_data['sma50'].iloc[-1]
-                    
-                    stock_logger.info("'{}' is in a recent pull-back".format(self.symbol))
-                    
-                    # Check if the last low is within a small range of the sma50:
-                    # It's about to meet resistance, and could be ready to resume the trend.
-                    if self.is_in_range(last_low, last_sma):
-                        
-                        stock_logger.info("'{}' is in range".format(self.symbol))
-
-                        self.potential = 2
-
         stock_logger.info("'{}' potential is now: {}".format(self.symbol,
                             self.potential))
 

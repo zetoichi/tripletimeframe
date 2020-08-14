@@ -8,8 +8,6 @@ import requests
 import pandas as pd
 from requests import HTTPError
 
-#logging.disable(logging.CRITICAL)
-
 class Alpaca:
     
     # ALPACA ACCESS (ENVIRONMENT VARIABLES)
@@ -34,7 +32,7 @@ class Alpaca:
     quote_url = market_url + '/last_quote/stocks/'
 
     @error_logging
-    def get_watchlist(self):
+    def get_watchlist_symbols(self):
             
         r = requests.get(self.watchlist_url,
                         headers=self.headers,

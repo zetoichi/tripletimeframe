@@ -12,6 +12,8 @@ from alpaca import Alpaca
 from stock_data import Stock
 from scan_data import ScanThread
 
+
+
 def main():
     
     loop_lock = Lock()
@@ -52,9 +54,13 @@ schedule.every().wednesday.at("11:27").do(main)
 schedule.every().thursday.at("11:27").do(main)
 schedule.every().friday.at("11:27").do(main)
 
+DEBUG = True
 
 if __name__ == "__main__":
     
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    if DEBUG:
+        main()
+    else:
+        while True:
+            schedule.run_pending()
+            time.sleep(1)

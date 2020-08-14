@@ -8,6 +8,7 @@ This is a first working version, much further optimizing required.
 
 TO-DO:
 
+*- Refactor scan and potentital methods*
 *- Re-write tests for latest upgrades*
 *- Expand watchlist automation functionality*
 *- Review scan frequency*

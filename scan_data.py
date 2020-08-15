@@ -6,6 +6,7 @@ from ttf_logger import debug_logger, stock_logger
 
 from alpaca import Alpaca
 from stock_data import Stock
+from yahoo_parser import yahoo_watchlist
 
 class ScanThread(threading.Thread):
 
@@ -39,6 +40,7 @@ def initialize_data():
 
     a = Alpaca()
     watchlist = a.get_watchlist_symbols()
+    watchlist += yahoo_watchlist()
 
     stocks = {
         'initial': {Stock(symbol) for symbol in watchlist},

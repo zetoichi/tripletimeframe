@@ -42,7 +42,7 @@ class Alpaca:
         
         watchlist = json.loads(r.content)
 
-        watchlist_symbols = [asset['symbol'] for asset in watchlist['assets']]
+        watchlist_symbols = {asset['symbol'] for asset in watchlist['assets']}
         
         return watchlist_symbols
     
@@ -58,7 +58,7 @@ class Alpaca:
         
         positions = json.loads(r.content)
 
-        positions_symbols = [position['symbol'] for position in positions]
+        positions_symbols = {position['symbol'] for position in positions}
 
         return positions_symbols
     

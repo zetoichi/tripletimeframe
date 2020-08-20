@@ -1,8 +1,9 @@
 import os
 import json
+from datetime import datetime
 
 import logging
-from ttf_logger import debug_logger, error_logging
+from ttf_logger import debug_logger
 
 import requests
 import pandas as pd
@@ -23,15 +24,15 @@ class Alpaca:
     # ALPACA URLs
     base_url = 'https://paper-api.alpaca.markets/v2'
     orders_url = base_url + '/orders'
-    acct_url = base_url + '/account'
+    acct_url = base_url + '/account/'
     watchlist_url = base_url + '/watchlists/' + str(watchlist_id)
     assets_url = base_url + '/assets/'
     positions_url = base_url + '/positions'
     
     market_url = 'https://data.alpaca.markets/v1'
     quote_url = market_url + '/last_quote/stocks/'
+    
 
-    @error_logging
     def get_watchlist_symbols(self):
             
         r = requests.get(self.watchlist_url,
@@ -45,26 +46,24 @@ class Alpaca:
         watchlist_symbols = {asset['symbol'] for asset in watchlist['assets']}
         
         return watchlist_symbols
+
     
-    
-    @error_logging
-    def get_positions(self):
+    def get_positions_symbols(self):
 
         r = requests.get(self.positions_url,
-                        headers=self.headers,
-                        timeout=5)
+                headers=self.headers,
+                timeout=5)
         
         debug_logger.debug("API called for positions")
         
         positions = json.loads(r.content)
 
-        positions_symbols = {position['symbol'] for position in positions}
-
+        positions_symbols = {asset['symbol'] for asset in positions['assets']}
+        
         return positions_symbols
-    
+        
 
-    @error_logging
-    def place_order(self, symbol, side, qty, type='market', 
+    def place_order(self, symbol, side, qty, type='stop_limit', 
                     time_in_force='gtc', order_class='bracket'):
 
         params = {
@@ -89,11 +88,10 @@ class Alpaca:
                 return False
 
         debug_logger.debug("""API called to place order for '{}'""".format(symbol))
-        
-        return True
-            
 
-    @error_logging
+        return True
+    
+
     def close_position(self, symbol):
 
         params = {
@@ -108,7 +106,6 @@ class Alpaca:
         debug_logger.debug("""API called to close position for '{}'""".format(symbol))
     
 
-    @error_logging
     def is_tradable(self, symbol):
 
         
@@ -132,7 +129,6 @@ class Alpaca:
 
 
     # Calculate take-profit and stop-loss order prices based on last quote
-    @error_logging
     def take_and_stop(self, symbol):
 
 

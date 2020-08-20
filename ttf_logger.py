@@ -10,6 +10,7 @@ debug_logger = logging.getLogger('DEBUG_LOGGER')
 error_logger = logging.getLogger('ERROR_LOGGER')
 stock_logger = logging.getLogger('STOCK_LOGGER')
 
+"""
 def error_logging(function):
 
     global error_logger
@@ -28,3 +29,4 @@ def error_logging(function):
         return result
     
     return wrapper
+"""

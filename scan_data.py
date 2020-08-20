@@ -1,12 +1,16 @@
-import time
 import threading
+from datetime import datetime
+from datetime import time 
+from time import sleep
 
 import logging
 from ttf_logger import debug_logger, stock_logger
 
+import record_handler as record
 from alpaca import Alpaca
 from stock_data import Stock
 from yahoo_parser import yahoo_watchlist
+
 
 class ScanThread(threading.Thread):
 
@@ -25,28 +29,39 @@ class ScanThread(threading.Thread):
 
 
 def initialize_data():
-    """
-    - Create a dict of sets:
+    """    
+    Create a dict of:
         
-        - initial set of Stock objects for data scanning 
-          (from Alpaca watchlist)
+        - initial set of Stock objects from:
+            - Manually created Alpaca watchlist            
+            - Automatic selection of stocks from Yahoo Finance watchlists        
         
-        - three empty sets to be populated by stocks that:
-            
+        - 3 empty sets to be populated by stocks that:
             - show strong potential after trend scan
             - show weak potential after tactical scan
-            - show strong potential tactical scan, are ready to buy
+            - show strong potential after tactical scan, are ready to buy
+        
+        - a set of dictionaries containing information on open positions
+        
+        - a list of completed trades to be saved and later analized
     """
+    
+    trades = {}
+    trades[datetime.now().strftime('%Y-%m-%d')] = set()
 
     a = Alpaca()
     watchlist = a.get_watchlist_symbols()
-    watchlist += yahoo_watchlist()
+    watchlist.update(yahoo_watchlist())
+
+    stock_logger.info("Initialized watchlist with '{}' symbols".format(len(watchlist)))
 
     stocks = {
         'initial': {Stock(symbol) for symbol in watchlist},
         'potential': set(),
         'standby': set(),
-        'buy': set()
+        'buy': set(),
+        'bought': record.get_open_positions(),
+        'trades': trades
         }
 
     debug_logger.debug("Created stocks dictionary")
@@ -54,14 +69,14 @@ def initialize_data():
     return stocks
 
 
-
-def trend_scan(stocks, lock, sleep_time=1800, scans=3):
+def trend_scan(stocks, lock, sleep_time=1800):
     """
-    Scan the trend data (longer) timeframe for potential, then populate the 
+    Scan the trend data timeframe for potential, then populate the 
     potential stocks set and discard the stock if it shows no potential
     """
 
-    while scans > 0:
+    while market_open():
+
         lock.acquire()
         debug_logger.debug("Lock acquired by trend_scan()")
 
@@ -76,143 +91,176 @@ def trend_scan(stocks, lock, sleep_time=1800, scans=3):
                 if stock.potential == 2:
                     stocks['potential'].add(stock)
 
-                time.sleep(5)     
+                sleep(0.2)     
             
         lock.release()
         debug_logger.debug("Lock released by trend_scan()")
-        scans -= 1
-        debug_logger.debug("{} trend scans remaining".format(scans))
-        
-        time.sleep(sleep_time)
+
+        stock_logger.info("{} stocks have potential after trend scan".format(len(stocks['potential'])))
+
+        sleep(sleep_time)
 
 
-
-def tactical_scan(stocks, lock, sleep_time=600, scans=12):
+def tactical_scan(stocks, lock, sleep_time=600):
     """
-    Scan the tactical (medium) timeframe data of each stock for potential,
+    Scan the tactical timeframe data of each stock for potential,
     discard the stock if it shows no potential, then populate the
     standby set or buy set
     """
 
-    while scans > 0:
+    while market_open():
+
         lock.acquire()
         debug_logger.debug("Lock acquired by tactical_scan()")
 
-        if stocks['potential']:
-
-            for stock in stocks['potential']: 
-            
-                if not stock.open:
-                    
-                    stock.get_tactical_potential()
-
-                    debug_logger.debug("get_tactical_potential() called for '{}'".format(stock.symbol))
-    
-                    if stock.potential == 2:
-                        stocks['buy'].add(stock)
-    
-                    elif stock.potential == 1:   
-                        stocks['standby'].add(stock)
-    
-                time.sleep(5)     
-            
-            lock.release()
-            debug_logger.debug("Lock released by tactical_scan()")
-            scans -= 1
-            debug_logger.debug("{} tactical scans remaining".format(scans))
-
-        else:
-            lock.release()
-            debug_logger.debug("Lock released by tactical_scan()")
-            
+        for stock in stocks['potential']: 
         
-        time.sleep(sleep_time)
+            if not stock.open:
+                
+                stock.get_tactical_potential()
+
+                debug_logger.debug("get_tactical_potential() called for '{}'".format(stock.symbol))
+
+                if stock.potential == 2:
+                    stocks['buy'].add(stock)
+
+                elif stock.potential == 1:   
+                    stocks['standby'].add(stock)
+
+            sleep(1)
+            
+        lock.release()
+        debug_logger.debug("Lock released by tactical_scan()")
+
+        stock_logger.info("{} stocks have potential after tactical scan".format(len(stocks['buy'])))
+        stock_logger.info("{} stocks remain in standby after tactical scan".format(len(stocks['standby'])))
+
+        sleep(sleep_time)
 
 
 
-def standby_scan(stocks, lock, sleep_time=120, scans=24):
+def standby_scan(stocks, lock, sleep_time=120):
     """
-    
+    Re-scan the tactical timeframe for stocks that showed weak potential
     """
 
-    while scans > 0:
+    while market_open():
+
         lock.acquire()
         debug_logger.debug("Lock acquired by standby_scan()")
 
-        if stocks['standby']:
-
-            for stock in stocks['standby']:
-                
-                if not stock.open:
-
-                    stock.get_tactical_potential()
-
-                    debug_logger.debug("get_tactical_potential() called for '{}'".format(stock.symbol))
-
-                    if stock.potential == 2: 
-                        stocks['buy'].add(stock)
-
-                time.sleep(5)
+        for stock in stocks['standby']:
             
-            lock.release()
-            debug_logger.debug("Lock released by standby_scan()")
-            scans -= 1
-            debug_logger.debug("{} standby scans remaining".format(scans))
+            if not stock.open:
 
-        else:
-            lock.release()
-            debug_logger.debug("Lock released by standby_scan()")
+                stock.get_tactical_potential()
+
+                debug_logger.debug("get_tactical_potential() called for '{}'".format(stock.symbol))
+
+                if stock.potential == 2: 
+                    stocks['buy'].add(stock)
+
+            sleep(1)
+            
+        lock.release()
+        debug_logger.debug("Lock released by standby_scan()")
+
+        stock_logger.info("{} have potential after standby scan".format(len(stocks['buy'])))
         
-        time.sleep(sleep_time)
+        sleep(sleep_time)
     
 
 
-def execute_scan(stocks, lock, sleep_time=60, scans=40):
+def execute_scan(stocks, lock, sleep_time=60):
     """
     - Scan price action to find the optimal moment for placing BUY order
     - Place order
-    - Change Stock status
-    - Discard from set of potential stocks
+    - Create dictionary with information on the position
     """
 
-    while scans > 0:
+    while market_open():
+
         lock.acquire()
         debug_logger.debug("Lock acquired by execute_scan()")
 
-        if stocks['buy']:
+        for stock in stocks['buy']: 
+        
+            if not stock.open:
 
-            for stock in stocks['buy']: 
-            
-                if not stock.open:
+                stock.get_execution_potential()
 
-                    stock.get_execution_potential()
+                debug_logger.debug("get_execution_potential() called for '{}'".format(stock.symbol))
 
-                    debug_logger.debug("get_execution_potential() called for '{}'".format(stock.symbol))
-
-                    if stock.potential == 2:
-                        
-                        a = Alpaca()
-                        # TO-DO! Add functionality to calculate optimal position?
-                        # Temporarily, an arbitrary amount of 10 shares is established
-                        if a.place_order(stock.symbol, 'buy', 10):
-                        
-                            stock.open = True
-                            stock_logger.info("stock.open changed to True")
-                            stock.potential = 0
-                            stock_logger.info("stock.potential returned to 0")
-
-                        else:
-                            continue
+                if stock.potential == 2:
                     
-                time.sleep(5)
+                    a = Alpaca()
+                    # TO-DO! Add functionality to calculate optimal position?
+                    # Temporarily, an arbitrary amount of 10 shares is established
+                    if a.place_order(stock.symbol, 'buy', 10):
+                        
+                        stock.open_position()
+                        stocks['bought'].add(stock)
+                        stock_logger.info("Placed order of 10 stocks of '{}'".format(stock.symbol))
+                        
+                    else:
+                        continue
+                    
+                sleep(2)
         
-            lock.release()
-            debug_logger.debug("Lock released by execute_scan()")
-            scans -= 1
-            debug_logger.debug("{} execute scans remaining".format(scans))
+        lock.release()
+        debug_logger.debug("Lock released by execute_scan()")
         
-        else:
-            lock.release()
-            debug_logger.debug("Lock released by execute_scan()")
+        stock_logger.info("Stocks of {} symbol were bought".format(len(stocks['bought'])))
 
-        time.sleep(sleep_time)
+        sleep(sleep_time)
+
+
+def sell_scan(stocks, lock, sleep_time=300):
+    """
+    Scans open position's unrealized profit for optimal sell signal
+    """
+
+    while market_open():
+        
+        lock.acquire()
+        debug_logger.debug("Lock acquired by sell_scan()")
+
+        for stock in stocks['bought']:
+
+            stock.get_sell_signal()
+            debug_logger.debug("get_sell_signal() called for '{}'".format(stock.symbol))
+
+            if stock.sell:
+
+                a = Alpaca()
+                a.close_position(stock.symbol)
+                stock.close_position()
+
+                stock_logger.info("Closed position of 10 stocks of '{}'".format(stock.symbol))
+                stocks['trades'].add(stock.position_record)
+            
+            else:
+                continue
+                
+            sleep(2)
+        
+        lock.release()
+        debug_logger.debug("Lock released by sell_scan()")
+        
+        stock_logger.info("{} stocks were sold".format(len(stocks['trades'])))
+
+        sleep(sleep_time)
+    
+    record.store_new_trades(stocks['trades'])
+
+
+def market_open():
+
+    market_close = time(17, 00)
+    now = datetime.now()
+    current_time = time(now.hour, now.minute)
+
+    if current_time < market_close:
+        return True
+
+    return False

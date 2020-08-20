@@ -1,9 +1,10 @@
 import os
-import datetime as dt
 import json
+from datetime import datetime
+from datetime import timedelta
 
 import logging
-from ttf_logger import debug_logger, stock_logger, error_logging
+from ttf_logger import debug_logger, stock_logger
 
 import pandas as pd
 import requests
@@ -22,7 +23,7 @@ class Stock:
 
     def __init__(self, symbol, trend_timeframe='day',
                  tactical_timeframe='60Min', execution_timeframe='1Min',
-                 sma_windows=(50,), stoch_windows=(8,3,5)):
+                 sma_windows=(50,), stoch_windows=(8,3,5), open=False):
         
         """
         String representing the symbol of the stock
@@ -64,18 +65,20 @@ class Stock:
         """
         Indicate if the stock position is already open
         """
-        self.open = False
+        self.open = open
+        self.sell = False
+
+        self.position_record = {}
 
 
-    @error_logging
-    def get_data(self, timeframe, limit=10):
+    def get_data(self, timeframe, limit=1000):
 
         url = ('https://data.alpaca.markets/v1/bars/' +
                timeframe)
 
         params = {
             'symbols': str(self.symbol),
-            'limit': int(limit)
+            'limit': limit
             }
         
         rename_dict = {
@@ -94,6 +97,29 @@ class Stock:
         data.rename(rename_dict, axis=1, inplace=True)
 
         return data
+
+
+    def get_open_position(self):
+
+        url = 'https://paper-api.alpaca.markets/v2/positions'
+
+        params = {
+            'symbol': self.symbol,
+            }
+
+        r = requests.get(url,
+                        params=params,
+                        headers=self.headers,
+                        timeout=5)
+        
+        debug_logger.debug("API called for positions")
+        
+        position = json.loads(r.content)
+        
+        position['cost_basis'] = float(position['cost_basis'])
+        position['unrealized_plpc'] = float(position['unrealized_plpc'])
+
+        return position
 
     
     def get_trend_data(self):
@@ -146,11 +172,11 @@ class Stock:
 
     def alpaca_data_resample(self, data):
 
-        data['time'] = data['time'].apply(dt.datetime.fromtimestamp)
+        data['time'] = data['time'].apply(datetime.fromtimestamp)
         data.set_index('time', inplace=True)
 
-        params = {'rule': dt.timedelta(hours=1),
-        'offset': dt.timedelta(minutes=30)}
+        params = {'rule': timedelta(hours=1),
+        'offset': timedelta(minutes=30)}
 
         data_resample = pd.DataFrame()
         data_resample['open'] = data['open'].resample(**params).asfreq()
@@ -162,9 +188,36 @@ class Stock:
 
         return data_resample
 
+    
+    def create_position_record(self):
+
+        position = {
+            'bought_on': datetime.now().strftime('%H:%M:%S'),
+            'cost_basis': 0,
+            'unrealized_plpc': 0,
+            'max_unrealized_plpc': 0,
+            'scans_left': 5,
+            'sold on': None
+            }
+        
+        self.position_record[self.symbol] = position
+
+
+    def open_position(self):
+
+        self.create_position_record()
+        self.open = True
+        self.potential = 0
+
+
+    def close_position(self):
+
+        self.position_record['sold on'] = datetime.now().strftime('%H:%M:%S')
+        self.open = False
+        self.sell = False
+
 
     # Calculate and store Stochastic values
-    @error_logging
     def get_stochastic(self, data):
 
         # Unpack given Stochastic windows
@@ -184,7 +237,6 @@ class Stock:
         return data
     
 
-    @error_logging
     def get_trend_potential(self):
 
         trend_data = self.get_trend_data()
@@ -208,7 +260,6 @@ class Stock:
                             self.potential))
 
 
-    @error_logging
     def get_tactical_potential(self):
 
         self.potential = 0        # Initialize potential signal
@@ -237,7 +288,6 @@ class Stock:
                             self.potential))
     
     
-    @error_logging
     def get_execution_potential(self):
         
         self.potential = 0        # Initialize potential signal
@@ -259,6 +309,30 @@ class Stock:
         stock_logger.info("'{}' potential is now: {}".format(self.symbol,
                             self.potential))
     
+    
+    def get_sell_signal(self):
+
+        current = self.get_open_position()
+        stored = self.position_record
+
+        if not stored['cost_basis']:
+            stored['cost_basis'] = current['cost_basis']
+        
+        stored['unrealized_plpc'] = current['unrealized_plpc']
+
+        if current['unrealized_plpc'] > stored['max_unrealized_plpc']:
+            stored['max_unrealized_plpc'] = current['unrealized_plpc']
+
+            stock_logger.info("New max_unrealized_plpc for '{}'".format(self.symbol))
+        
+        else:
+            stored['scans_left'] -= 1
+            stock_logger.info("Unrealized_plpc for '{}' is lower than max.".format(self.symbol))
+            
+            if stored['scans_left'] <= 0:
+                
+                self.sell = True
+                
 
     @staticmethod
     def is_in_range(x, y, range_percent=10):

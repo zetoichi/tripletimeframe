@@ -1,8 +1,3 @@
-
-"""
-
-"""
-
 import schedule
 import time
 from threading import Lock
@@ -11,7 +6,6 @@ import scan_data as scan
 from alpaca import Alpaca
 from stock_data import Stock
 from scan_data import ScanThread
-
 
 
 def main():
@@ -35,16 +29,22 @@ def main():
     standby = ScanThread(scan.standby_scan,
                         'Standby',
                         (data, loop_lock), thread_lock)
+
+    sell = ScanThread(scan.sell_scan,
+                        'Sell',
+                        (data, loop_lock), thread_lock)
                         
     trend.start()
     tactical.start()
     standby.start()
     execute.start()
+    sell.start()
     
     trend.join()
     tactical.join()
     standby.join()
     execute.join()
+    sell.join()
 
 
 

@@ -8,9 +8,10 @@ This is a first working version, much further optimizing required.
 
 TO-DO:
 
-*- Refactor scan and potentital methods*
-*- Re-write tests for latest upgrades*
-*- Expand watchlist automation functionality*
-*- Review scan frequency*
-*- Add sell funcionality for open positions*
-*- Improve take and stop order calculations*
+- *Migrate Alpaca API from raw requests to official SDK client*
+- *Re-write error logging decorator!!!*
+- *Re-write tests for latest upgrades*
+- *Adjust scan frequencies*
+- *Refactor scan and potentital methods* DONE
+- *Expand watchlist automation functionality* DONE
+- *Add sell funcionality for open positions* DONE

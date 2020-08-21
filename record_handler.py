@@ -3,8 +3,8 @@ from datetime import datetime
 
 from stock_data import Stock
 
-positions_file = 'open_positions.json'
-trades_file = 'trades.json'
+positions_file = 'ttf_records/open_positions.json'
+trades_file = 'ttf_records/trades.json'
 
 def store_open_positions(bought):
     """

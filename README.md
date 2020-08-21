@@ -12,6 +12,8 @@ TO-DO:
 - *Re-write error logging decorator!!!*
 - *Re-write tests for latest upgrades*
 - *Adjust scan frequencies*
+- *Add functionality to calculate optimal position*
+- *Add record keeping for future analysis, visualization and optimization* DONE
 - *Refactor scan and potentital methods* DONE
 - *Expand watchlist automation functionality* DONE
 - *Add sell funcionality for open positions* DONE

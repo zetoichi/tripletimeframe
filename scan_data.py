@@ -6,8 +6,8 @@ from time import sleep
 import logging
 from ttf_logger import debug_logger, stock_logger
 
+import alpaca
 import record_handler as record
-from alpaca import Alpaca
 from stock_data import Stock
 from yahoo_parser import yahoo_watchlist
 
@@ -28,6 +28,8 @@ class ScanThread(threading.Thread):
         self.target(*self.args)
 
 
+today = datetime.now().strftime('%Y-%m-%d')
+
 def initialize_data():
     """    
     Create a dict of:
@@ -45,12 +47,12 @@ def initialize_data():
         
         - a list of completed trades to be saved and later analized
     """
-    
-    trades = {}
-    trades[datetime.now().strftime('%Y-%m-%d')] = set()
+    global today
 
-    a = Alpaca()
-    watchlist = a.get_watchlist_symbols()
+    trades = {}
+    trades[today] = set()
+
+    watchlist = alpaca.get_watchlist_symbols()
     watchlist.update(yahoo_watchlist())
 
     stock_logger.info("Initialized watchlist with '{}' symbols".format(len(watchlist)))
@@ -78,7 +80,7 @@ def trend_scan(stocks, lock, sleep_time=1800):
     while market_open():
 
         lock.acquire()
-        debug_logger.debug("Lock acquired by trend_scan()")
+        debug_logger.debug("Lock acquired by trend_scan")
 
         for stock in stocks['initial']:
 
@@ -86,7 +88,7 @@ def trend_scan(stocks, lock, sleep_time=1800):
 
                 stock.get_trend_potential()
 
-                debug_logger.debug("get_trend_potential() called for '{}'".format(stock.symbol))
+                debug_logger.debug("get_trend_potential for '{}'".format(stock.symbol))
 
                 if stock.potential == 2:
                     stocks['potential'].add(stock)
@@ -94,7 +96,7 @@ def trend_scan(stocks, lock, sleep_time=1800):
                 sleep(0.2)     
             
         lock.release()
-        debug_logger.debug("Lock released by trend_scan()")
+        debug_logger.debug("Lock released by trend_scan")
 
         stock_logger.info("{} stocks have potential after trend scan".format(len(stocks['potential'])))
 
@@ -111,7 +113,7 @@ def tactical_scan(stocks, lock, sleep_time=600):
     while market_open():
 
         lock.acquire()
-        debug_logger.debug("Lock acquired by tactical_scan()")
+        debug_logger.debug("Lock acquired by tactical_scan")
 
         for stock in stocks['potential']: 
         
@@ -119,7 +121,7 @@ def tactical_scan(stocks, lock, sleep_time=600):
                 
                 stock.get_tactical_potential()
 
-                debug_logger.debug("get_tactical_potential() called for '{}'".format(stock.symbol))
+                debug_logger.debug("get_tactical_potential for '{}'".format(stock.symbol))
 
                 if stock.potential == 2:
                     stocks['buy'].add(stock)
@@ -130,7 +132,7 @@ def tactical_scan(stocks, lock, sleep_time=600):
             sleep(1)
             
         lock.release()
-        debug_logger.debug("Lock released by tactical_scan()")
+        debug_logger.debug("Lock released by tactical_scan")
 
         stock_logger.info("{} stocks have potential after tactical scan".format(len(stocks['buy'])))
         stock_logger.info("{} stocks remain in standby after tactical scan".format(len(stocks['standby'])))
@@ -147,7 +149,7 @@ def standby_scan(stocks, lock, sleep_time=120):
     while market_open():
 
         lock.acquire()
-        debug_logger.debug("Lock acquired by standby_scan()")
+        debug_logger.debug("Lock acquired by standby_scan")
 
         for stock in stocks['standby']:
             
@@ -155,7 +157,7 @@ def standby_scan(stocks, lock, sleep_time=120):
 
                 stock.get_tactical_potential()
 
-                debug_logger.debug("get_tactical_potential() called for '{}'".format(stock.symbol))
+                debug_logger.debug("get_tactical_potential for '{}'".format(stock.symbol))
 
                 if stock.potential == 2: 
                     stocks['buy'].add(stock)
@@ -163,9 +165,9 @@ def standby_scan(stocks, lock, sleep_time=120):
             sleep(1)
             
         lock.release()
-        debug_logger.debug("Lock released by standby_scan()")
+        debug_logger.debug("Lock released by standby_scan")
 
-        stock_logger.info("{} have potential after standby scan".format(len(stocks['buy'])))
+        stock_logger.info("{} stocks have potential after standby".format(len(stocks['buy'])))
         
         sleep(sleep_time)
     
@@ -181,7 +183,7 @@ def execute_scan(stocks, lock, sleep_time=60):
     while market_open():
 
         lock.acquire()
-        debug_logger.debug("Lock acquired by execute_scan()")
+        debug_logger.debug("Lock acquired by execute_scan")
 
         for stock in stocks['buy']: 
         
@@ -189,28 +191,21 @@ def execute_scan(stocks, lock, sleep_time=60):
 
                 stock.get_execution_potential()
 
-                debug_logger.debug("get_execution_potential() called for '{}'".format(stock.symbol))
+                debug_logger.debug("get_execution_potential for '{}'".format(stock.symbol))
 
                 if stock.potential == 2:
                     
-                    a = Alpaca()
-                    # TO-DO! Add functionality to calculate optimal position?
-                    # Temporarily, an arbitrary amount of 10 shares is established
-                    if a.place_order(stock.symbol, 'buy', 10):
-                        
-                        stock.open_position()
-                        stocks['bought'].add(stock)
-                        stock_logger.info("Placed order of 10 stocks of '{}'".format(stock.symbol))
-                        
-                    else:
-                        continue
+                    alpaca.place_order(stock.symbol, 'buy', 10)    
+                    stock.open_position()
+                    stocks['bought'].add(stock)
+                    stock_logger.info("Placed order for '{}'".format(stock.symbol))
                     
                 sleep(2)
         
         lock.release()
         debug_logger.debug("Lock released by execute_scan()")
         
-        stock_logger.info("Stocks of {} symbol were bought".format(len(stocks['bought'])))
+        stock_logger.info("Stocks of {} symbol bought".format(len(stocks['bought'])))
 
         sleep(sleep_time)
 
@@ -219,25 +214,25 @@ def sell_scan(stocks, lock, sleep_time=300):
     """
     Scans open position's unrealized profit for optimal sell signal
     """
+    global today
 
     while market_open():
         
         lock.acquire()
-        debug_logger.debug("Lock acquired by sell_scan()")
+        debug_logger.debug("Lock acquired by sell_scan")
 
         for stock in stocks['bought']:
 
             stock.get_sell_signal()
-            debug_logger.debug("get_sell_signal() called for '{}'".format(stock.symbol))
+            debug_logger.debug("get_sell_signal for '{}'".format(stock.symbol))
 
             if stock.sell:
 
-                a = Alpaca()
-                a.close_position(stock.symbol)
+                alpaca.close_position(stock.symbol)
                 stock.close_position()
 
-                stock_logger.info("Closed position of 10 stocks of '{}'".format(stock.symbol))
-                stocks['trades'].add(stock.position_record)
+                stock_logger.info("Liquidated stocks of '{}'".format(stock.symbol))
+                stocks['trades'][today].add(stock.position_record)
             
             else:
                 continue
@@ -247,11 +242,11 @@ def sell_scan(stocks, lock, sleep_time=300):
         lock.release()
         debug_logger.debug("Lock released by sell_scan()")
         
-        stock_logger.info("{} stocks were sold".format(len(stocks['trades'])))
+        stock_logger.info("{} stocks were sold".format(len(stocks['trades'][today])))
 
         sleep(sleep_time)
     
-    record.store_new_trades(stocks['trades'])
+    record.store_new_trades(stocks['trades'][today])
 
 
 def market_open():

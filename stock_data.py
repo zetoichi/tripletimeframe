@@ -9,6 +9,8 @@ from ttf_logger import debug_logger, stock_logger
 import pandas as pd
 import requests
 
+import alpaca
+
 class Stock:
 
     # API ACCESS (ENVIRONMENT VARIABLES)
@@ -72,15 +74,11 @@ class Stock:
 
 
     def get_data(self, timeframe, limit=1000):
-
-        url = ('https://data.alpaca.markets/v1/bars/' +
-               timeframe)
-
-        params = {
-            'symbols': str(self.symbol),
-            'limit': limit
-            }
         
+        bars = alpaca.get_bars(self.symbol, timeframe, limit)
+        data = pd.DataFrame.from_dict(bars)
+
+        # Rename columns for clarity
         rename_dict = {
             't': 'time',
             'o': 'open',
@@ -90,10 +88,6 @@ class Stock:
             'v': 'volume',
             }
 
-        r = requests.get(url, params=params, headers=self.headers)
-        data = pd.DataFrame.from_dict(json.loads(r.content)[self.symbol])
-
-        # Rename columns for consistency between dataframes
         data.rename(rename_dict, axis=1, inplace=True)
 
         return data
@@ -101,20 +95,7 @@ class Stock:
 
     def get_open_position(self):
 
-        url = 'https://paper-api.alpaca.markets/v2/positions'
-
-        params = {
-            'symbol': self.symbol,
-            }
-
-        r = requests.get(url,
-                        params=params,
-                        headers=self.headers,
-                        timeout=5)
-        
-        debug_logger.debug("API called for positions")
-        
-        position = json.loads(r.content)
+        position = alpaca.get_open_position(self.symbol)
         
         position['cost_basis'] = float(position['cost_basis'])
         position['unrealized_plpc'] = float(position['unrealized_plpc'])
@@ -196,7 +177,6 @@ class Stock:
             'cost_basis': 0,
             'unrealized_plpc': 0,
             'max_unrealized_plpc': 0,
-            'scans_left': 5,
             'sold on': None
             }
         
@@ -241,7 +221,7 @@ class Stock:
 
         trend_data = self.get_trend_data()
 
-        debug_logger.debug("get_trend_data() called for '{}'".format(
+        debug_logger.debug("get_trend_data called for '{}'".format(
                             self.symbol))
 
         last_month_smas = trend_data['sma50'].iloc[-30:].values
@@ -266,7 +246,7 @@ class Stock:
 
         tactical_data = self.get_tactical_data()
 
-        debug_logger.debug("get_tactical_data() called for '{}'".format(
+        debug_logger.debug("get_tactical_data called for '{}'".format(
                             self.symbol))
 
         last_k = tactical_data['k'].iloc[-1]
@@ -294,7 +274,7 @@ class Stock:
 
         execution_data = self.get_execution_data()
 
-        debug_logger.debug("get_execution_data() called for '{}'".format(
+        debug_logger.debug("get_execution_data called for '{}'".format(
                             self.symbol))
 
         last_three_highs = execution_data['high'].iloc[-3:].values
@@ -310,7 +290,9 @@ class Stock:
                             self.potential))
     
     
-    def get_sell_signal(self):
+    def get_sell_signal(self, trailing_pc=8):
+
+        trailing_pc = 1 - (trailing_pc/100)
 
         current = self.get_open_position()
         stored = self.position_record
@@ -318,21 +300,27 @@ class Stock:
         if not stored['cost_basis']:
             stored['cost_basis'] = current['cost_basis']
         
-        stored['unrealized_plpc'] = current['unrealized_plpc']
+        gain = current['unrealized_plpc']
+        max_gain = stored['max_unrealized_plpc']
+        
+        stored['unrealized_plpc'] = gain
 
-        if current['unrealized_plpc'] > stored['max_unrealized_plpc']:
-            stored['max_unrealized_plpc'] = current['unrealized_plpc']
+        if gain > max_gain:
+            max_gain = gain
 
-            stock_logger.info("New max_unrealized_plpc for '{}'".format(self.symbol))
+            stock_logger.info("New max_gain for '{}'".format(self.symbol))
         
         else:
-            stored['scans_left'] -= 1
-            stock_logger.info("Unrealized_plpc for '{}' is lower than max.".format(self.symbol))
-            
-            if stored['scans_left'] <= 0:
-                
+            tactical_data = self.get_tactical_data()
+
+            last_k = tactical_data['k'].iloc[-1]
+            last_d = tactical_data['d'].iloc[-1]
+
+            if (gain < (max_gain * trailing_pc) or
+                last_k <= last_d):
+
                 self.sell = True
-                
+
 
     @staticmethod
     def is_in_range(x, y, range_percent=10):

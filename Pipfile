@@ -13,6 +13,7 @@ schedule = "*"
 pytz = "*"
 beautifulsoup4 = "*"
 lxml = "*"
+alpaca-trade-api = "*"
 
 [requires]
 python_version = "3.8"

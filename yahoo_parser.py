@@ -78,7 +78,7 @@ def filter_stocks(symbol_set, row):
             pass
         else:
             if (20 < stock['price'] < 800 and
-                stock['change'] > 0.5):
+                stock['change'] > 0):
                 
                 symbol_set.add(stock['symbol'])
                 debug_logger.debug("Added '{}' to watchlist".format(stock['symbol']))

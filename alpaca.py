@@ -5,152 +5,107 @@ from datetime import datetime
 import logging
 from ttf_logger import debug_logger
 
-import requests
-import pandas as pd
-from requests import HTTPError
+import alpaca_trade_api as trade_api
 
-class Alpaca:
+# ALPACA ACCESS (ENVIRONMENT VARIABLES)
+API_KEY = os.environ.get('ALPACA_API')
+API_SECRET = os.environ.get('ALPACA_SECRET')
+WATCHLIST_ID = os.environ.get('ALPACA_WATCHLIST_ID')
+
+# ALPACA URLs
+PAPER_URL = 'https://paper-api.alpaca.markets'
+DATA_URL = 'https://data.alpaca.markets'
+
+api = trade_api.REST(API_KEY, API_SECRET, PAPER_URL)
+
+def get_watchlist_symbols():
     
-    # ALPACA ACCESS (ENVIRONMENT VARIABLES)
-    api_key = os.environ.get('ALPACA_API')
-    api_secret = os.environ.get('ALPACA_SECRET')
-    watchlist_id = os.environ.get('ALPACA_WATCHLIST_ID')
+    watchlist = api.get_watchlist(WATCHLIST_ID)
+        
+    debug_logger.debug("API called for watchlist")
+
+    watchlist_symbols = {asset['symbol'] for asset in watchlist.assets}
     
-    headers = {
-        'APCA-API-KEY-ID': api_key,
-        'APCA-API-SECRET-KEY': api_secret
-        }
+    return watchlist_symbols
 
-    # ALPACA URLs
-    base_url = 'https://paper-api.alpaca.markets/v2'
-    orders_url = base_url + '/orders'
-    acct_url = base_url + '/account/'
-    watchlist_url = base_url + '/watchlists/' + str(watchlist_id)
-    assets_url = base_url + '/assets/'
-    positions_url = base_url + '/positions'
+
+def get_positions_symbols():
     
-    market_url = 'https://data.alpaca.markets/v1'
-    quote_url = market_url + '/last_quote/stocks/'
+    positions = api.list_positions()
     
+    debug_logger.debug("API called for positions")
 
-    def get_watchlist_symbols(self):
-            
-        r = requests.get(self.watchlist_url,
-                        headers=self.headers,
-                        timeout=5)
-        
-        debug_logger.debug("API called for watchlist")
-        
-        watchlist = json.loads(r.content)
-
-        watchlist_symbols = {asset['symbol'] for asset in watchlist['assets']}
-        
-        return watchlist_symbols
-
+    positions_symbols = {asset['symbol'] for asset in positions}
     
-    def get_positions_symbols(self):
+    return positions_symbols
 
-        r = requests.get(self.positions_url,
-                headers=self.headers,
-                timeout=5)
+
+def get_open_position(symbol):
+
+    return api.get_position(symbol)._raw
+
+
+def get_bars(symbol, timeframe, limit):
+
+    return api.get_barset(symbol, timeframe, limit)[symbol]._raw
+
+def place_order(symbol, side, qty, type='stop_limit', 
+                time_in_force='gtc', order_class='bracket'):
+    
+    if is_tradable(symbol):
         
-        debug_logger.debug("API called for positions")
+        stop, limit, take, loss = stop_limit_take_loss(symbol)
         
-        positions = json.loads(r.content)
+        api.submit_order(
+            symbol=symbol,
+            side=side,
+            qty=str(qty),
+            type=type,
+            time_in_force=time_in_force,
+            order_class=order_class,
+            stop_price=stop,
+            limit_price=limit,
+            take_profit=take,
+            stop_loss=loss
+            )
+    
+    debug_logger.debug("""API called to place order for '{}'""".format(symbol))
 
-        positions_symbols = {asset['symbol'] for asset in positions['assets']}
-        
-        return positions_symbols
-        
 
-    def place_order(self, symbol, side, qty, type='stop_limit', 
-                    time_in_force='gtc', order_class='bracket'):
+def close_position(symbol):
 
-        params = {
-            'symbol': symbol,
-            'side': side,
-            'qty': str(qty),
-            'type': type,
-            'time_in_force': time_in_force,
-            'order_class': order_class,
-            'take_profit': self.take_and_stop(symbol)[0],
-            'stop_loss': self.take_and_stop(symbol)[1]
-            }
-        
-        if self.is_tradable(symbol):
-            
-            try:
-                r = requests.post(self.orders_url,
-                                  params=params,
-                                  headers=self.headers,
-                                  timeout=5)
-            except HTTPError:
-                return False
+    api.close_position(symbol)
 
-        debug_logger.debug("""API called to place order for '{}'""".format(symbol))
+    debug_logger.debug("""API called to close position for '{}'""".format(symbol))
 
+
+def is_tradable(symbol):
+    
+    asset = api.get_asset(symbol)
+
+    debug_logger.debug("""API called by is_tradable() for '{}'""".format(symbol))
+
+    if (asset.status == 'active' and
+        asset.tradable == True):
         return True
+    else:
+        return False
+
+
+# Calculate take-profit and stop-loss order prices based on last quote
+def stop_limit_take_loss(symbol):
+
+    last_bar = api.get_barset(symbol, '1Min', limit=1)[symbol]
+    last_close = last_bar[0].c
     
-
-    def close_position(self, symbol):
-
-        params = {
-            'symbol': symbol,
-            }
-
-        r = requests.delete(positions_url,
-                            params=params,
-                            headers=self.headers,
-                            timeout=5)
-
-        debug_logger.debug("""API called to close position for '{}'""".format(symbol))
-    
-
-    def is_tradable(self, symbol):
-
-        
-        asset_url = self.assets_url + symbol
-        
-        r = requests.get(asset_url,
-                        headers=self.headers,
-                        timeout=5)
-        
-        debug_logger.debug("""API called by is_tradable() for '{}'""".format(symbol))
-        
-        asset = json.loads(r.content)
-
-        if (asset['status'] == 'active' and
-            asset['tradable'] == True):
-
-            return True
-        
-        else:
-            return False
-
-
-    # Calculate take-profit and stop-loss order prices based on last quote
-    def take_and_stop(self, symbol):
-
-
-        last_quote_url = self.quote_url + symbol
-
-        r = requests.get(last_quote_url,
-                        headers=self.headers,
-                        timeout=5)
-        
-        debug_logger.debug("""API called by take_and_stop() for '{}'""".format(symbol))
-
-        quote = json.loads(r.content)
-        bid = quote['last']['bidprice']
-        ask = quote['last']['askprice']
-
-        take_profit = {
-                       'limit_price': str((bid / 100) * 130)
-                       }
-        
-        stop_loss = {
-                    'stop_price': str(round((ask / 100) * 90, 2)),
-                    'limit_price': str(round((ask / 100) * 88, 2))
+    stop_price = str(round(last_close * 0.98))
+    limit_price = str(round(last_close * 1.04))
+    take_profit = {
+                    'limit_price': str(round(last_close * 1.25, 2))
                     }
-        
-        return take_profit, stop_loss
+    stop_loss = {
+                'stop_price': str(round(last_close * 0.9, 2)),
+                'limit_price': str(round(last_close * 0.88, 2))
+                }
+    
+    return stop_price, limit_price, take_profit, stop_loss

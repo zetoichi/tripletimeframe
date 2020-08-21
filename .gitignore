@@ -5,7 +5,13 @@
 .vscode/
 settings.json
 
+# Record files
+ttf_records/
+open_positions.json
+trades.json
+
 # Log files
+ttf_logs/
 ttf_debug_log.log
 ttf_errors_log.log
 ttf_stock_log.log

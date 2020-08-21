@@ -3,7 +3,6 @@ import time
 from threading import Lock
 
 import scan_data as scan
-from alpaca import Alpaca
 from stock_data import Stock
 from scan_data import ScanThread
 
